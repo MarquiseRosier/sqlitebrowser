@@ -25,6 +25,7 @@ SqliteTableModel::SqliteTableModel(DBBrowserDB& db, QObject* parent, size_t chun
 void SqliteTableModel::reset()
 {
     m_sTable.clear();
+    m_sRowidColumn.clear();
     m_iSortColumn = 0;
     m_sSortOrder = "ASC";
     m_headers.clear();
@@ -58,7 +59,8 @@ void SqliteTableModel::setTable(const QString& table, int sortColumn, Qt::SortOr
         sqlb::TablePtr t = m_db.getObjectByName(table).dynamicCast<sqlb::Table>();
         if(t && t->fields().size()) // parsing was OK
         {
-            m_headers.push_back(t->rowidColumn());
+            m_sRowidColumn = t->rowidColumn();
+            m_headers.push_back(m_sRowidColumn);
             m_headers.append(t->fieldNames());
 
             // parse columns types
@@ -84,6 +86,7 @@ void SqliteTableModel::setTable(const QString& table, int sortColumn, Qt::SortOr
     if(!allOk)
     {
         QString sColumnQuery = QString::fromUtf8("SELECT * FROM %1;").arg(sqlb::escapeIdentifier(table));
+        m_sRowidColumn = "rowid";
         m_headers.push_back("rowid");
         m_headers.append(getColumns(sColumnQuery, m_vDataTypes));
     }
@@ -312,7 +315,7 @@ sqlb::ForeignKeyClause SqliteTableModel::getForeignKeyClause(int column) const
 bool SqliteTableModel::setData(const QModelIndex& index, const QVariant& value, int role)
 {
     // Don't even try setting any data if we're not browsing a table, i.e. the model data comes from a custom query
-    if(m_sTable.isEmpty())
+    if(!isEditable())
         return false;
 
     // This function is for in-place editing.
@@ -412,6 +415,9 @@ void SqliteTableModel::sort(int column, Qt::SortOrder order)
 
 bool SqliteTableModel::insertRows(int row, int count, const QModelIndex& parent)
 {
+    if(!isEditable())
+        return false;
+
     QByteArrayList blank_data;
     for(int i=0; i < m_headers.size(); ++i)
         blank_data.push_back("");
@@ -450,6 +456,9 @@ bool SqliteTableModel::insertRows(int row, int count, const QModelIndex& parent)
 
 bool SqliteTableModel::removeRows(int row, int count, const QModelIndex& parent)
 {
+    if(!isEditable())
+        return false;
+
     beginRemoveRows(parent, row, row + count - 1);
 
     bool ok = true;
@@ -472,6 +481,9 @@ bool SqliteTableModel::removeRows(int row, int count, const QModelIndex& parent)
 
 QModelIndex SqliteTableModel::dittoRecord(int old_row)
 {
+    if(!isEditable())
+        return QModelIndex();
+
     insertRow(rowCount());
     int firstEditedColumn = 0;
     int new_row = rowCount() - 1;
@@ -778,7 +790,7 @@ void SqliteTableModel::setPseudoPk(const QString& pseudoPk)
     {
         m_pseudoPk.clear();
         if(m_headers.size())
-            m_headers[0] = "rowid";
+            m_headers[0] = m_sRowidColumn;
     } else {
         m_pseudoPk = pseudoPk;
         if(m_headers.size())
@@ -786,4 +798,9 @@ void SqliteTableModel::setPseudoPk(const QString& pseudoPk)
     }
 
     buildQuery();
+}
+
+bool SqliteTableModel::isEditable() const
+{
+    return !m_sTable.isEmpty();
 }

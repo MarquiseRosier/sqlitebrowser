@@ -12,6 +12,7 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QBuffer>
+#include <QMenu>
 
 namespace
 {
@@ -75,7 +76,42 @@ ExtendedTableWidget::ExtendedTableWidget(QWidget* parent) :
     m_tableHeader = new FilterTableHeader(this);
     setHorizontalHeader(m_tableHeader);
 
+    // Set up vertical header context menu
     verticalHeader()->setContextMenuPolicy(Qt::CustomContextMenu);
+
+    // Set up table view context menu
+    m_contextMenu = new QMenu(this);
+    QAction* nullAction = new QAction(tr("Set to NULL"), m_contextMenu);
+    QAction* copyAction = new QAction(QIcon(":/icons/copy"), tr("Copy"), m_contextMenu);
+    QAction* pasteAction = new QAction(QIcon(":/icons/paste"), tr("Paste"), m_contextMenu);
+    m_contextMenu->addAction(nullAction);
+    m_contextMenu->addSeparator();
+    m_contextMenu->addAction(copyAction);
+    m_contextMenu->addAction(pasteAction);
+    setContextMenuPolicy(Qt::CustomContextMenu);
+
+    // Set up context menu actions
+    connect(this, static_cast<void(QTableView::*)(const QPoint&)>(&QTableView::customContextMenuRequested),
+            [=](const QPoint& pos)
+    {
+        // Try to find out whether the current view is editable and (de)activate menu options according to that
+        bool editable = editTriggers() != QAbstractItemView::NoEditTriggers;
+        nullAction->setEnabled(editable);
+        pasteAction->setEnabled(editable);
+
+        // Show menu
+        m_contextMenu->popup(viewport()->mapToGlobal(pos));
+    });
+    connect(nullAction, &QAction::triggered, [&]() {
+        foreach(const QModelIndex& index, selectedIndexes())
+            model()->setData(index, QVariant());
+    });
+    connect(copyAction, &QAction::triggered, [&]() {
+       copy();
+    });
+    connect(pasteAction, &QAction::triggered, [&]() {
+       paste();
+    });
 }
 
 void ExtendedTableWidget::reloadSettings()
@@ -257,7 +293,7 @@ void ExtendedTableWidget::paste()
         {
             // Ask user is it sure about this
             QMessageBox::StandardButton reply = QMessageBox::question(this, QApplication::applicationName(),
-                tr("The content of clipboard is bigger than the range selected.\nDo you want to insert it anyway?"),
+                tr("The content of the clipboard is bigger than the range selected.\nDo you want to insert it anyway?"),
                 QMessageBox::Yes|QMessageBox::No);
             if(reply != QMessageBox::Yes)
             {
